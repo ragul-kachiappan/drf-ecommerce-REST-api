@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'ecommerce_app',
     'user_app',
     'rest_framework',
+    'rest_framework.authtoken'
 ]
 
 AUTH_USER_MODEL = 'user_app.User'
