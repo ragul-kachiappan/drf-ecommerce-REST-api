@@ -1,7 +1,8 @@
 from rest_framework import serializers
-from ecommerce_app.models import Customer, Product, Category, Brand
+from ecommerce_app.models import Customer, Product, Category, Brand, Cart, Order
 
-class UserSerializer(serializers.ModelSerializer):
+class CustomerSerializer(serializers.ModelSerializer):
+    cart = serializers.ListField()
     class Meta:
         model = Customer
         fields = ['username', 'first_name', 'last_name', 'email', 'wallet_balance']
@@ -23,15 +24,15 @@ class BrandSerializer(serializers.ModelSerializer):
         model = Brand
         fields = ['id', 'name']
 
-# class CartSerializer(serializers.ModelSerializer):
-#     class Meta:
-#         model = Cart
-#         fields = ['id', 'product', 'user', 'quantity']
+class CartSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Cart
+        fields = ['id', 'product', 'user', 'quantity']
 
-# class OrderSerializer(serializers.ModelSerializer):
-#     class Meta:
-#         model = Order
-#         fields = ['id', 'user', 'products', 'date', 'total_price']
+class OrderSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Order
+        fields = ['id', 'user', 'products', 'quantity', 'date', 'total_price']
 
 # class WalletHistorySerializer(serializers.ModelSerializer):
 #     class Meta:
