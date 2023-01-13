@@ -7,9 +7,11 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ['username', 'first_name', 'last_name', 'email', 'wallet_balance']
 
 class ProductSerializer(serializers.ModelSerializer):
+    brand_name = serializers.CharField(source='brand.name')
+    category_name = serializers.CharField(source='category.name')
     class Meta:
         model = Product
-        fields = ['name', 'category', 'brand', 'price', 'stock', 'description']
+        fields = ['name', 'category_name', 'brand_name', 'price', 'stock', 'description']
 
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:

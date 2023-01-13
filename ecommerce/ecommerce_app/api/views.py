@@ -6,6 +6,8 @@ from rest_framework.views import APIView
 from ecommerce_app.api.custom_permissions import AdminOrReadOnly, UserOrReadOnly
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.pagination import PageNumberPagination
+from rest_framework.authentication import TokenAuthentication
 
 
 # class AddAmountView(generics.UpdateAPIView):
@@ -18,6 +20,7 @@ from rest_framework import status
 
 class AddProductView(APIView):
     permission_classes = [IsAdminUser, IsAuthenticated]
+    authentication_classes = (TokenAuthentication)
     def post(self, request):
         serializer = ProductSerializer(data=request.data)
         if serializer.is_valid():
@@ -33,20 +36,31 @@ class AddProductView(APIView):
 
 class ProductListView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
+    authentication_classes = (TokenAuthentication,)
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
+    pagination_class = PageNumberPagination
+    
+
+
 
 
 class ProductByCategoryView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = ProductSerializer
+    authentication_classes = (TokenAuthentication,)
+    pagination_class = PageNumberPagination
     def get_queryset(self):
         pk = self.kwargs['pk']
         return Product.objects.filter(category=pk)
 
+
+
 class ProductByBrandView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = ProductSerializer
+    authentication_classes = (TokenAuthentication,)
+    pagination_class = PageNumberPagination
     def get_queryset(self):
         pk = self.kwargs['pk']
         return Product.objects.filter(brand=pk)
