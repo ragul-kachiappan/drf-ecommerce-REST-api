@@ -1,18 +1,20 @@
 from rest_framework import serializers
-from ecommerce_app.models import Product, Category, Brand, Order
+from ecommerce_app.models import Product, Category, Brand, Order, Wallet, WalletHistory
 
-# class CustomerSerializer(serializers.ModelSerializer):
-#     cart = serializers.ListField()
-#     class Meta:
-#         model = Customer
-#         fields = ['username', 'first_name', 'last_name', 'email', 'wallet_balance']
 
-class ProductSerializer(serializers.ModelSerializer):
+class ProductGetSerializer(serializers.ModelSerializer):
     brand_name = serializers.CharField(source='brand.name')
     category_name = serializers.CharField(source='category.name')
     class Meta:
         model = Product
         fields = ['name', 'category_name', 'brand_name', 'price', 'stock', 'description']
+
+class ProductPostSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Product
+        fields = ['name', 'category', 'brand', 'price', 'stock', 'description']
+
 
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
@@ -44,12 +46,12 @@ class OrderSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='product.name')
     class Meta:
         model = Order
-        fields = ['id', 'product', 'product_name', 'quantity', 'date', 'total_price']
+        fields = ['product', 'product_name', 'quantity', 'purchase_date', 'total_price']
 
-# class WalletHistorySerializer(serializers.ModelSerializer):
-#     class Meta:
-#         model = WalletHistory
-#         fields = ['id', 'user', 'amount', 'type', 'date']
+class WalletHistorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WalletHistory
+        fields = ['id', 'amount', 'type', 'previous_wallet_amount', 'current_wallet_amount', 'date']
 
 # class SaleSerializer(serializers.ModelSerializer):
 #     class Meta:

@@ -1,6 +1,7 @@
 from rest_framework import generics
-from ecommerce_app.models import Product, Category, Brand, Order
-from ecommerce_app.api.serializers import ProductSerializer, OrderSerializer, AddCartSerializer, UpdateCartSerializer
+from ecommerce_app.models import Product, Category, Brand, Order, Wallet, WalletHistory
+from ecommerce_app.api.serializers import (ProductGetSerializer, ProductPostSerializer, OrderSerializer, AddCartSerializer,
+                                        UpdateCartSerializer, WalletHistorySerializer)
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.views import APIView
 from ecommerce_app.api.custom_permissions import AdminOrReadOnly, UserOrReadOnly
@@ -12,7 +13,8 @@ from rest_framework.authtoken.models import Token
 from django.shortcuts import get_object_or_404
 from user_app.models import User
 from rest_framework.exceptions import ValidationError
-
+from decimal import Decimal
+import datetime
 
 # class AddAmountView(generics.UpdateAPIView):
 #     permission_classes = [IsAuthenticated]
@@ -22,11 +24,46 @@ from rest_framework.exceptions import ValidationError
 #     permission_classes = [IsAdminUser]
 #     serializer_class = ProductSerializer
 
+# class AddToWalletView(generics.CreateAPIView):
+#     serializer_class = WalletSerializer
+#     permission_classes = (IsAuthenticated,)
+
+#     def perform_create(self, serializer):
+#         user_id = Token.objects.get(key=self.request.auth.key).user_id
+#         user = User.objects.get(id=user_id)
+#         user_wallet, created = Wallet.objects.get_or_create(wallet_user=user)
+#         print(self.request.data.get('amount'))
+#         new_balance = user_wallet.wallet_balance
+#         serializer.save(wallet_user = user, wallet_balance = new_balance)
+#         return Response({'Wallet balance': new_balance}, status=status.HTTP_200_OK)
+
+class AddToWalletView(APIView):
+    permission_classes = (IsAuthenticated,)
+    authentication_classes = (TokenAuthentication,)
+    def put(self,request):
+        user_id = Token.objects.get(key=self.request.auth.key).user_id
+        user = User.objects.get(id=user_id)
+        user_wallet, created = Wallet.objects.get_or_create(wallet_user=user)
+        wallet_record = WalletHistory.objects.create(user=user)
+        wallet_record.previous_wallet_amount = user_wallet.wallet_balance
+        wallet_record.type = "credit"
+        wallet_record.amount = Decimal(self.request.data.get('amount'))
+        user_wallet.wallet_balance += Decimal(self.request.data.get('amount'))
+        wallet_record.current_wallet_amount = user_wallet.wallet_balance
+        wallet_record.date = datetime.datetime.now()
+        user_wallet.save()
+        wallet_record.save()
+        data = {
+            'user' : user.username,
+            'wallet_balance': user_wallet.wallet_balance
+        }
+        return Response(data, status=status.HTTP_200_OK)
+
 class AddProductView(APIView):
     permission_classes = [IsAdminUser, IsAuthenticated]
-    authentication_classes = (TokenAuthentication)
+    authentication_classes = (TokenAuthentication,)
     def post(self, request):
-        serializer = ProductSerializer(data=request.data)
+        serializer = ProductPostSerializer(data=request.data)
         if serializer.is_valid():
             object = serializer.save()
             data = {}
@@ -42,7 +79,7 @@ class ProductListView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
     authentication_classes = (TokenAuthentication,)
     queryset = Product.objects.all()
-    serializer_class = ProductSerializer
+    serializer_class = ProductGetSerializer
     pagination_class = PageNumberPagination
     
 
@@ -51,30 +88,36 @@ class ProductListView(generics.ListAPIView):
 
 class ProductByCategoryView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
-    serializer_class = ProductSerializer
+    authentication_classes = (TokenAuthentication,)
+    serializer_class = ProductGetSerializer
     authentication_classes = (TokenAuthentication,)
     pagination_class = PageNumberPagination
     def get_queryset(self):
-        pk = self.kwargs['pk']
+        pk = self.request.data['category_id']
         return Product.objects.filter(category=pk)
 
 
 
 class ProductByBrandView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
-    serializer_class = ProductSerializer
+    authentication_classes = (TokenAuthentication,)
+    serializer_class = ProductGetSerializer
     authentication_classes = (TokenAuthentication,)
     pagination_class = PageNumberPagination
     def get_queryset(self):
-        pk = self.kwargs['pk']
+        pk = self.request.data['brand_id']
         return Product.objects.filter(brand=pk)
 
 
-class ProductDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Product.objects.all()
-    serializer_class = ProductSerializer
-    permission_classes = [AdminOrReadOnly]
 
+class ProductDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = (TokenAuthentication,)
+    def get(self, request):
+        pk = self.request.data['product_id']
+        product = Product.objects.get(id=pk)
+        serializer = ProductGetSerializer(product)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 
@@ -83,6 +126,7 @@ class ProductDetailView(generics.RetrieveUpdateDestroyAPIView):
 class AddToCartView(generics.CreateAPIView):
     serializer_class = AddCartSerializer
     permission_classes = (IsAuthenticated,)
+    authentication_classes = (TokenAuthentication,)
 
     def perform_create(self, serializer):
         product = get_object_or_404(Product, pk=self.request.data.get('product'))
@@ -126,7 +170,8 @@ class UpdateCartView(APIView):
         user = User.objects.get(id=user_id)
         order = Order.objects.filter(user=user, product=self.request.data.get('product'))
         if order.exists():
-            order.update(quantity=self.request.data.get('quantity'))
+            order.update(quantity = self.request.data.get('quantity'))
+            order.update(total_price = self.request.data.get('quantity') * product.price)
             data = {
                 'user': user.username,
                 'product': product.name,
@@ -137,6 +182,69 @@ class UpdateCartView(APIView):
             return Response(data, status=status.HTTP_200_OK)
         else:
             raise ValidationError("Item not in cart")
+
+
+
+class BuyCartView(APIView):
+    permission_classes = (IsAuthenticated,)
+    authentication_classes = (TokenAuthentication,)
+
+    def get(self, request):
+        user_id = Token.objects.get(key=self.request.auth.key).user_id
+        user = User.objects.get(id=user_id)
+        orders = Order.objects.filter(user=user, purchased=False)
+        wallet = get_object_or_404(Wallet, wallet_user=user)
+        wallet_record = WalletHistory.objects.create(user=user)
+
+        total_bill = sum([order.total_price for order in orders.all()])
+        if total_bill > wallet.wallet_balance:
+            return Response(
+                {'error': 'Insufficient balance in wallet'},
+                status=status.HTTP_400_BAD_REQUEST
+            ) 
+        wallet_record.previous_wallet_amount = wallet.wallet_balance
+        wallet_record.amount = total_bill
+        wallet_record.type = "debit"
+        wallet.wallet_balance -= total_bill
+        wallet_record.current_wallet_amount = wallet.wallet_balance
+        wallet_record.date = datetime.datetime.now()
+        wallet.save()
+        wallet_record.save()
+        for order in orders.all():
+            order.purchased = True
+            order.purchase_date = datetime.datetime.now()
+            order.save()
+        return Response({'success': 'Order placed successfully'})
+
+
+
+class WalletHistoryView(generics.ListAPIView):
+
+    permission_classes = (IsAuthenticated,)
+    authentication_classes = (TokenAuthentication,)    
+    serializer_class = WalletHistorySerializer
+    permission_classes = (IsAuthenticated,)
+    authentication_classes = (TokenAuthentication,)
+    pagination_class = PageNumberPagination    
+    def get_queryset(self):
+        user_id = Token.objects.get(key=self.request.auth.key).user_id
+        user = User.objects.get(id=user_id)
+        return WalletHistory.objects.filter(user=user, date__gte=self.request.data['from_date'], date__lte=self.request.data['to_date'])
+
+class OrderHistoryView(generics.ListAPIView):
+
+    permission_classes = (IsAuthenticated,)
+    authentication_classes = (TokenAuthentication,)    
+    serializer_class = OrderSerializer
+    permission_classes = (IsAuthenticated,)
+    authentication_classes = (TokenAuthentication,)
+    pagination_class = PageNumberPagination
+
+    def get_queryset(self):
+        user_id = Token.objects.get(key=self.request.auth.key).user_id
+        user = User.objects.get(id=user_id)
+        return Order.objects.filter(user = user, purchased = True)
+
 
 
 

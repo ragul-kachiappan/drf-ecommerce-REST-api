@@ -42,27 +42,28 @@ class Product(models.Model):
 
 class Wallet(models.Model):
     wallet_balance = models.DecimalField(default=0.00, max_digits=10, decimal_places=2)
-    wallet_user = models.OneToOneField(User, on_delete=models.CASCADE, primary_key=True,)
-    date = models.DateTimeField(auto_now_add=True)
+    wallet_user = models.OneToOneField(User, on_delete=models.CASCADE, primary_key=True)
 
     def __str__(self):
         return self.wallet_user.username
 
 class WalletHistory(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
-    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    amount = models.DecimalField(max_digits=10, decimal_places=2, default= 0.00, null=True)
     type = models.CharField(max_length=255) # credit or debit
-    date = models.DateTimeField(default=datetime.now)
+    date = models.DateTimeField(null=True)
+    previous_wallet_amount = models.DecimalField(max_digits=10, decimal_places=2, default = 0.00, null=True)
+    current_wallet_amount = models.DecimalField(max_digits=10, decimal_places=2, default = 0.00, null=True)
 
     def __str__(self):
-        return self.user.username
+        return self.user.username + ' ' + self.type
 
 class Order(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     quantity = models.IntegerField(default=0)
-    date = models.DateTimeField(default=datetime.now)
-    total_price = models.DecimalField(max_digits=10, decimal_places=2)
+    purchase_date = models.DateTimeField(null=True)
+    total_price = models.DecimalField(max_digits=10, decimal_places=2, null=True)
     purchased = models.BooleanField(default=False)
 
     def __str__(self):

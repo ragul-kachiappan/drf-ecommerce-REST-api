@@ -7,9 +7,11 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework.authtoken.models import Token
+from rest_framework.authentication import TokenAuthentication
 from django.contrib.auth import authenticate, login
 from user_app.models import User
 from user_app.api.serializers import SignUpSerializer, AddAdminSerializer
+from django.contrib.auth import logout
 
 # class SignUpView(generics.CreateAPIView):
 #     serializer_class = SignUpSerializer
@@ -58,10 +60,12 @@ class SignUpView(APIView):
         data = {}
         data['Response'] = "Registration successful"
         data['username'] = user.username
-        data['token'] = token
+        #data['token'] = token
         return Response(data)
 
 class AddAdminView(APIView):
+    permission_classes = (IsAuthenticated,IsAdminUser,)
+    authentication_classes = (TokenAuthentication,)
     def post(self, request):
         serializer = AddAdminSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -70,7 +74,7 @@ class AddAdminView(APIView):
         data = {}
         data['Response'] = "Registration successful"
         data['username'] = user.username
-        data['token'] = token
+        #data['token'] = token
         return Response(data)
 
 class LoginView(APIView):
@@ -78,13 +82,14 @@ class LoginView(APIView):
         username = request.data['username']
         password = request.data['password']
         user = authenticate(request, username=username, password=password)
+
         if user is not None:
             login(request, user)
-            token = Token.objects.get(user=user).key
+            token, created = Token.objects.get_or_create(user=user)
             data = {}
             data['Response'] = "Login successful"
             data['username'] = user.username
-            data['token'] = token
+            data['token'] = token.key
             return Response(data)
         else:
             data = {}
@@ -92,9 +97,10 @@ class LoginView(APIView):
             return Response(data)
 
 class LogoutView(APIView):
-    def post(self, request):
+    authentication_classes = [TokenAuthentication]
+    def post(self, request, format=None):
         request.user.auth_token.delete()
-        return Response(status=status.HTTP_200_OK)
+        return Response({"message":"logout successful, token deleted"},status=status.HTTP_200_OK)
 
 
 
