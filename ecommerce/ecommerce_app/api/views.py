@@ -1,6 +1,6 @@
 from rest_framework import generics
-from ecommerce_app.models import Customer, Product, Category, Brand
-from ecommerce_app.api.serializers import UserSerializer, ProductSerializer, CartSerializer, OrderSerializer
+from ecommerce_app.models import Product, Category, Brand, Order
+from ecommerce_app.api.serializers import ProductSerializer, OrderSerializer, AddCartSerializer, UpdateCartSerializer
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.views import APIView
 from ecommerce_app.api.custom_permissions import AdminOrReadOnly, UserOrReadOnly
@@ -11,6 +11,7 @@ from rest_framework.authentication import TokenAuthentication
 from rest_framework.authtoken.models import Token
 from django.shortcuts import get_object_or_404
 from user_app.models import User
+from rest_framework.exceptions import ValidationError
 
 
 # class AddAmountView(generics.UpdateAPIView):
@@ -74,35 +75,119 @@ class ProductDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = ProductSerializer
     permission_classes = [AdminOrReadOnly]
 
+
+
+
+
+
 class AddToCartView(generics.CreateAPIView):
-    serializer_class = OrderSerializer
+    serializer_class = AddCartSerializer
     permission_classes = (IsAuthenticated,)
 
     def perform_create(self, serializer):
-        product = get_object_or_404(Product, pk=self.request.data.get('product_id'))
+        product = get_object_or_404(Product, pk=self.request.data.get('product'))
+        user_id = Token.objects.get(key=self.request.auth.key).user_id
+        user = User.objects.get(id=user_id)
         if product.stock < 1:
             return Response(status=status.HTTP_400_BAD_REQUEST)
+        order = Order.objects.filter(user=user, product=product)
+        if order.exists():
+            raise ValidationError("You have already added this product to your cart")
         product.stock -= 1
-        serializer.data['quantity'] = 1
         product.save()
-        user_id = Token.objects.get(key=self.request.auth.key).user_id
-        user = User.objects.get(id=user_id)
-        serializer.save(user=user)
 
-class UpdateCartView(generics.UpdateAPIView):
-    serializer_class = OrderSerializer
+        serializer.save(user = user, quantity = 1, total_price = product.price)
+        data = {
+            'user': user.username,
+            'product': product.name,
+            'message': "Product added to your cart"
+        }
+
+        return Response(data, status=status.HTTP_201_CREATED)
+    
+
+class CartView(APIView):
     permission_classes = (IsAuthenticated,)
-
-    def perform_update(self, serializer):
-        product = get_object_or_404(Product, pk=self.request.data.get('product_id'))
-        if product.stock < self.request.data.get('quantity'):
-            return Response(status=status.HTTP_400_BAD_REQUEST)
-        product.stock -= self.request.data.get('quantity')
-        serializer.data['quantity'] = self.request.data.get('quantity')
-        product.save()
+    authentication_classes = (TokenAuthentication,)
+    def get(self, request):
         user_id = Token.objects.get(key=self.request.auth.key).user_id
         user = User.objects.get(id=user_id)
-        serializer.save(user=user)
+        cart = Order.objects.filter(user=user)
+        serializer = OrderSerializer(cart, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+class UpdateCartView(APIView):
+    permission_classes = (IsAuthenticated,)
+    authentication_classes = (TokenAuthentication,)
+
+    def put(self, request):
+        product = get_object_or_404(Product, pk=self.request.data.get('product'))
+        user_id = Token.objects.get(key=self.request.auth.key).user_id
+        user = User.objects.get(id=user_id)
+        order = Order.objects.filter(user=user, product=self.request.data.get('product'))
+        if order.exists():
+            order.update(quantity=self.request.data.get('quantity'))
+            data = {
+                'user': user.username,
+                'product': product.name,
+                'quantity': self.request.data.get('quantity')
+            }
+            product.stock -= (self.request.data.get('quantity') - 1)
+            product.save()
+            return Response(data, status=status.HTTP_200_OK)
+        else:
+            raise ValidationError("Item not in cart")
+
+
+
+
+
+# class UpdateCartView(generics.UpdateAPIView):
+#     serializer_class = UpdateCartSerializer
+#     permission_classes = (IsAuthenticated,)
+
+#     def get_queryset(self):
+#         user_id = Token.objects.get(key=self.request.auth.key).user_id
+#         user = User.objects.get(id=user_id)
+#         return Order.objects.filter(user=user, product=self.request.data['product'])
+
+#     def perform_update(self, serializer):
+#         product = get_object_or_404(Product, pk=self.request.data.get('product_id'))
+#         if product.stock < self.request.data.get('quantity'):
+#             return Response(status=status.HTTP_400_BAD_REQUEST)
+#         order = Order.objects.filter(user=user, product=product)
+#         if order.exists():
+#             product.stock -= (self.request.data.get('quantity') - 1)
+#             product.save()
+#             serializer.save(user=user, quantity= self.request.data.get('quantity'), total_price= product.price * self.request.data.get('quantity'))
+#             data = {
+#                 'user': user.name,
+#                 'product': product.name,
+#                 'quantity': self.request.data.get('quantity'),
+#                 'message': "Product quantity updated successfully"
+#             }
+#             return Response(data, status=status.HTTP_200_OK)
+#         else:
+#             raise ValidationError('You have not added this product your cart')
+
+
+
+
+
+
+# class DisplayCartView(generics.ListAPIView):
+#     serializer_class = OrderSerializer
+#     permission_classes = (IsAuthenticated,)
+#     pagination_class = None
+#     def get_queryset(self):
+#         user_id = Token.objects.get(key=self.request.auth.key).user_id
+#         user = User.objects.get(id=user_id)
+#         return Order.objects.filter(user=user)
+
+
+
+
+
 
 # class BuyCartView(generics.UpdateAPIView):
 #     serializer_class = OrderSerializer
@@ -120,4 +205,6 @@ class UpdateCartView(generics.UpdateAPIView):
 #         order.purchased = True
 #         order.save()
 #         serializer.save()
+
+
 
