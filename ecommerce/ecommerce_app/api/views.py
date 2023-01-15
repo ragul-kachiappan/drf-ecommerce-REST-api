@@ -123,31 +123,74 @@ class ProductDetailView(APIView):
 
 
 
-class AddToCartView(generics.CreateAPIView):
-    serializer_class = AddCartSerializer
-    permission_classes = (IsAuthenticated,)
-    authentication_classes = (TokenAuthentication,)
+# class AddToCartView(generics.CreateAPIView):
+#     serializer_class = AddCartSerializer
+#     permission_classes = (IsAuthenticated,)
+#     authentication_classes = (TokenAuthentication,)
 
-    def perform_create(self, serializer):
+#     def perform_create(self, serializer):
+#         product = get_object_or_404(Product, pk=self.request.data.get('product'))
+#         user_id = Token.objects.get(key=self.request.auth.key).user_id
+#         user = User.objects.get(id=user_id)
+#         if product.stock < 1:
+#             return Response(status=status.HTTP_400_BAD_REQUEST)
+#         order = Order.objects.filter(user=user, product=product)
+#         if order.exists():
+#             raise ValidationError("You have already added this product to your cart")
+#         product.stock -= 1
+#         product.save()
+
+#         serializer.save(user = user, quantity = 1, total_price = product.price)
+#         data = {}
+#         data['user'] = user.username
+#         # data['product'] = product.name
+#         data['message'] = "Product added to your cart"
+
+#         return Response(data, status=status.HTTP_201_CREATED)
+
+class AddToCartView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = (TokenAuthentication,)
+    def post(self, request):
+        serializer = AddCartSerializer(data=request.data)
+        if serializer.is_valid():
+            product = get_object_or_404(Product, pk=self.request.data.get('product'))
+            user_id = Token.objects.get(key=self.request.auth.key).user_id
+            user = User.objects.get(id=user_id)
+            if product.stock < 1:
+                return Response(status=status.HTTP_400_BAD_REQUEST)
+            order = Order.objects.filter(user=user, product=product)
+            if order.exists():
+                raise ValidationError("You have already added this product to your cart")
+            product.stock -= 1
+            product.save()
+            serializer.save(user = user, quantity = 1, total_price = product.price)
+            data = {}
+            data['user'] = user.username
+            data['product'] = product.name
+            data['message'] = "Product added to your cart"
+            return Response(data, status=status.HTTP_201_CREATED)
+        else:
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class RemoveFromCartView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = (TokenAuthentication,)
+    def delete(self, request):
+
         product = get_object_or_404(Product, pk=self.request.data.get('product'))
         user_id = Token.objects.get(key=self.request.auth.key).user_id
         user = User.objects.get(id=user_id)
-        if product.stock < 1:
-            return Response(status=status.HTTP_400_BAD_REQUEST)
-        order = Order.objects.filter(user=user, product=product)
-        if order.exists():
-            raise ValidationError("You have already added this product to your cart")
-        product.stock -= 1
+        order = Order.objects.get(user = user, product = product)
+        product.stock += order.quantity
         product.save()
+        order.delete()
+        data = {}
+        data['user'] = user.username
+        data['product'] = product.name
+        data['message'] = "Product removed from your cart"
+        return Response(data, status=status.HTTP_200_OK)
 
-        serializer.save(user = user, quantity = 1, total_price = product.price)
-        data = {
-            'user': user.username,
-            'product': product.name,
-            'message': "Product added to your cart"
-        }
-
-        return Response(data, status=status.HTTP_201_CREATED)
     
 
 class CartView(APIView):
@@ -156,7 +199,9 @@ class CartView(APIView):
     def get(self, request):
         user_id = Token.objects.get(key=self.request.auth.key).user_id
         user = User.objects.get(id=user_id)
-        cart = Order.objects.filter(user=user)
+        cart = Order.objects.filter(user=user, purchased = False)
+        if len(cart) == 0:
+            return Response({"message" : "No items in cart"}, status=status.HTTP_400_BAD_REQUEST)
         serializer = OrderSerializer(cart, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -236,8 +281,6 @@ class OrderHistoryView(generics.ListAPIView):
     permission_classes = (IsAuthenticated,)
     authentication_classes = (TokenAuthentication,)    
     serializer_class = OrderSerializer
-    permission_classes = (IsAuthenticated,)
-    authentication_classes = (TokenAuthentication,)
     pagination_class = PageNumberPagination
 
     def get_queryset(self):
@@ -246,7 +289,51 @@ class OrderHistoryView(generics.ListAPIView):
         return Order.objects.filter(user = user, purchased = True)
 
 
+class SaleReportByDateView(APIView):
+    permission_classes = (IsAuthenticated, IsAdminUser)
+    authentication_classes = (TokenAuthentication,)
 
+    def get(self, request):
+        from_date = self.request.data.get('from_date')
+        to_date = self.request.data.get('to_date')
+        orders = Order.objects.filter(purchase_date__gte = from_date, purchase_date__lte = to_date, purchased=True)
+        report = {}
+        for order in orders:
+            if order.purchase_date.date() in report:
+                report[order.purchase_date.date()]['count'] += order.quantity
+                report[order.purchase_date.date()]['total_price_sold'] += order.total_price
+            else:
+                report[order.purchase_date.date()] = {
+                    'date': order.purchase_date.date(),
+                    'count': order.quantity,
+                    'total_price_sold': order.total_price
+                }
+        if len(list(report.values())) == 0:
+            return Response({"message: No sale report in this date range"},status=status.HTTP_404_NOT_FOUND)
+        return Response(list(report.values()), status=status.HTTP_200_OK)
+
+class SaleReportByBrandView(APIView):
+    permission_classes = (IsAuthenticated, IsAdminUser)
+    authentication_classes = (TokenAuthentication,)
+
+    def get(self, request):
+        from_date = self.request.data.get('from_date')
+        to_date = self.request.data.get('to_date')
+        orders = Order.objects.filter(purchase_date__gte = from_date, purchase_date__lte = to_date, purchased=True)
+        report = {}
+        for order in orders:
+            if order.product.brand.id in report:
+                report[order.product.brand.id]['count'] += order.quantity
+                report[order.product.brand.id]['total_price_sold'] += order.total_price
+            else:
+                report[order.product.brand.id] = {
+                    'brand': order.product.brand.name,
+                    'count': order.quantity,
+                    'total_price_sold': order.total_price
+                }
+        if len(list(report.values())) == 0:
+            return Response({"message: No sale report in this date range"},status=status.HTTP_404_NOT_FOUND)
+        return Response(list(report.values()), status=status.HTTP_200_OK)   
 
 
 
