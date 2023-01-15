@@ -47,7 +47,6 @@ class User(AbstractUser, PermissionsMixin):
     last_name = models.CharField(max_length=50)
     username = models.CharField(max_length=50, unique=True)
     email = models.EmailField(max_length=254, unique=True)
-
     #required
     # USERNAME_FIELD = 'user_name'
     REQUIRED_FIELDS = ['first_name', 'last_name', 'email']
